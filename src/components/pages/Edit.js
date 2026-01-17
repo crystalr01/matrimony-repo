@@ -43,9 +43,9 @@ function Edit() {
     const isValidFirebaseStorageUrl = (url) => {
         if (!url || typeof url !== 'string') return false;
 
-        // Check if it's a valid Firebase Storage URL
-        const firebaseStoragePattern = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/.+/;
-        const firebaseStoragePattern2 = /^https:\/\/storage\.googleapis\.com\/[^/]+\/.+/;
+        // Check if it's a valid Firebase Storage URL - Using RegExp constructor to avoid escape character issues with /
+        const firebaseStoragePattern = new RegExp('^https://firebasestorage\\.googleapis\\.com/v0/b/[^/]+/o/.+');
+        const firebaseStoragePattern2 = new RegExp('^https://storage\\.googleapis\\.com/[^/]+/.+');
 
         return firebaseStoragePattern.test(url) || firebaseStoragePattern2.test(url);
     };
