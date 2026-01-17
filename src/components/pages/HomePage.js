@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getDatabase, ref, get, query, orderByKey, startAfter, limitToFirst, remove } from "firebase/database";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -6,13 +6,11 @@ function HomePage() {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [hasNextPage, setHasNextPage] = useState(true);
-    const [lastFetchedKey, setLastFetchedKey] = useState(null);
     const [totalPagesDiscovered, setTotalPagesDiscovered] = useState(1);
     const [loadingPage, setLoadingPage] = useState(null);
     const [isDiscoveringPages, setIsDiscoveringPages] = useState(false);
     const [estimatedTotalPages, setEstimatedTotalPages] = useState(null);
     const [pageSearchValue, setPageSearchValue] = useState("");
-    const [showPageSearch, setShowPageSearch] = useState(false);
     const [searchingPage, setSearchingPage] = useState(false);
     const [totalUsers, setTotalUsers] = useState(0);
 
@@ -179,7 +177,7 @@ function HomePage() {
         if (currentPage + 1 > totalPagesDiscovered) {
             setTotalPagesDiscovered(currentPage + 1);
         }
-    }, [currentPage, pageKeys, totalPagesDiscovered, estimatedTotalPages, loadingPage]);
+    }, [currentPage, pageKeys, totalPagesDiscovered, estimatedTotalPages, loadingPage, fetchUsers, users.length]);
 
     // Save users data whenever it changes
     useEffect(() => {
@@ -228,7 +226,8 @@ function HomePage() {
 
     // Enhanced fetchUsers with better state management
     // Enhanced fetchUsers with better state management
-    const fetchUsers = async (startKey) => {
+    // Actually, I'll just change the function definition to use useCallback.
+    const fetchUsers = useCallback(async (startKey) => {
         // Don't fetch if we're restoring state and already have users for the SAME page
         const savedPage = parseInt(sessionStorage.getItem("matrimony_users_page") || "0", 10);
         if (isRestoringStateRef.current && users.length > 0 && currentPage === savedPage) {
@@ -269,7 +268,7 @@ function HomePage() {
                 setHasNextPage(userEntries.length > 100);
 
                 const displayUsers = userEntries.slice(0, 100);
-                setLastFetchedKey(displayUsers[displayUsers.length - 1]?.[0] || null);
+                // Removed redundant lastFetchedKey setting as it was unused
 
                 const pageUsers = displayUsers.map(([key, value]) => {
                     const personal = value.personal || {};
@@ -301,8 +300,25 @@ function HomePage() {
                     };
                 });
 
-                setUsers(pageUsers);
-                console.log("Successfully fetched", pageUsers.length, "users for page", currentPage + 1);
+                if (currentPage === 0) {
+                    setUsers(pageUsers);
+                } else {
+                    setUsers(pageUsers);
+                }
+
+                // If we fetched a new page, update the pageKeys for the NEXT page
+                if (userEntries.length > 100) {
+                    const nextKey = userEntries[100][0];
+                    setPageKeys(prev => {
+                        const newKeys = [...prev];
+                        if (currentPage + 1 < newKeys.length) {
+                            newKeys[currentPage + 1] = nextKey;
+                        } else if (currentPage + 1 === newKeys.length) {
+                            newKeys.push(nextKey);
+                        }
+                        return newKeys;
+                    });
+                }
             } else {
                 setUsers([]);
                 setHasNextPage(false);
@@ -315,8 +331,9 @@ function HomePage() {
             setLoading(false);
             setLoadingPage(null);
             setSearchingPage(false);
+            isRestoringStateRef.current = false;
         }
-    };
+    }, [currentPage, pageKeys, users.length]);
 
     const discoverPagesBatch = async (targetPage) => {
         if (isDiscoveringPages || targetPage < pageKeys.length) return pageKeys;
@@ -554,7 +571,6 @@ function HomePage() {
         }
 
         setSearchingPage(true);
-        setShowPageSearch(false);
         setPageSearchValue("");
 
         await goToPage(targetPage);
@@ -629,11 +645,7 @@ function HomePage() {
         border: "1px solid #d8b4fe",
     };
 
-    const userCardHoverStyle = {
-        transform: "translateY(-6px)",
-        boxShadow: "0 12px 32px rgba(124, 58, 237, 0.2)",
-        border: "1px solid #d8b4fe",
-    };
+
 
     const userImageStyle = {
         width: "100%",
@@ -678,10 +690,7 @@ function HomePage() {
         cursor: "pointer",
     };
 
-    const buttonHoverStyle = {
-        background: "linear-gradient(90deg, #6d28d9 0%, #c026d3 100%)",
-        transform: "scale(1.03)",
-    };
+
 
     // NEW: Style for Update Photos button
     const updatePhotosButtonStyle = {
@@ -692,10 +701,7 @@ function HomePage() {
         marginTop: "6px",
     };
 
-    const updatePhotosButtonHoverStyle = {
-        background: "linear-gradient(90deg, #047857 0%, #065f46 100%)",
-        transform: "scale(1.03)",
-    };
+
 
     // NEW: Button container style for multiple buttons
     const buttonContainerStyle = {
@@ -714,10 +720,7 @@ function HomePage() {
         marginTop: isMobile ? "4px" : "0",
     };
 
-    const deleteButtonHoverStyle = {
-        background: "linear-gradient(90deg, #dc2626 0%, #991b1b 100%)",
-        transform: "scale(1.03)",
-    };
+
 
     const paginationContainerStyle = {
         display: "flex",

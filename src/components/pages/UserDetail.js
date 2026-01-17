@@ -103,7 +103,7 @@ function UserDetail() {
                     <h2 style={styles.sectionTitle}>Photos</h2>
                     <div style={styles.photoGallery}>
                         {user.photos.map((photo, index) => (
-                            <img key={index} src={photo} alt={`Photo ${index + 1}`} style={styles.photo} />
+                            <img key={index} src={photo} alt={`${index + 1}`} style={styles.photo} />
                         ))}
                     </div>
                 </div>

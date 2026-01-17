@@ -56,8 +56,7 @@ function RegistrationForm() {
         Other: ["Other"],
     };
     const interCasteOptions = ["Yes", "No"];
-    const educationOptions = ["High School", "Bachelor's", "Master's", "PhD", "Other"];
-    const professionOptions = ["Engineer", "Doctor", "Teacher", "Business", "Student", "Other"];
+
     const districtOptions = ["Sangli"];
 
     // Handle input changes
@@ -255,7 +254,6 @@ function RegistrationForm() {
 
     // Form styles
     const formContainerStyle = {
-        background: "#ffffff",
         borderRadius: "12px",
         boxShadow: "0 6px 18px rgba(0, 0, 0, 0.1)",
         padding: isMobile ? "16px" : "24px",
