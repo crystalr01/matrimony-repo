@@ -97,7 +97,6 @@ function Sidebar({ activeMenu, setActiveMenu, isSidebarOpen, toggleSidebar }) {
         <nav
             style={sidebarStyle}
             aria-label="Sidebar navigation with matrimony menu items"
-            aria-expanded={isSidebarOpen}
         >
             <button
                 style={toggleButtonStyle}

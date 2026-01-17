@@ -13,6 +13,7 @@ function HomePage() {
     const [pageSearchValue, setPageSearchValue] = useState("");
     const [searchingPage, setSearchingPage] = useState(false);
     const [totalUsers, setTotalUsers] = useState(0);
+    const isRestoringStateRef = useRef(false);
 
     const [pageKeys, setPageKeys] = useState(() => {
         const savedKeys = localStorage.getItem("matrimony_users_pageKeys");
@@ -35,7 +36,213 @@ function HomePage() {
     const navigate = useNavigate();
     const location = useLocation();
     const scrollPositionRef = useRef(0);
-    const isRestoringStateRef = useRef(false);
+    const isImageUrl = useCallback((url) => {
+        if (!url || typeof url !== 'string') return false;
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+        const lowerUrl = url.toLowerCase();
+        return (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) &&
+            imageExtensions.some(ext => lowerUrl.includes(ext));
+    }, []);
+
+    const calculateAge = useCallback((dob) => {
+        const today = new Date();
+        const birthDate = new Date(dob);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+        }
+        return age;
+    }, []);
+
+    const genderIcon = useCallback((gender) => {
+        if (!gender) return "👤";
+        if (gender.toLowerCase() === "male") return "👨";
+        if (gender.toLowerCase() === "female") return "👩";
+        return "👤";
+    }, []);
+
+    const estimateTotalPages = useCallback(async () => {
+        try {
+            // Optimization: Use shallow REST fetch to get only keys (much faster than fetching all data)
+            const dbUrl = "https://scroller-4d10f-default-rtdb.firebaseio.com";
+            const response = await fetch(`${dbUrl}/Matrimony/users.json?shallow=true`);
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data) {
+                    const totalUsersCount = Object.keys(data).length;
+                    setTotalUsers(totalUsersCount);
+                    const estimated = Math.ceil(totalUsersCount / 100);
+                    setEstimatedTotalPages(estimated);
+                    sessionStorage.setItem("matrimony_estimated_pages", estimated.toString());
+                    sessionStorage.setItem("matrimony_total_users", totalUsersCount.toString());
+                    console.log(`Estimated total pages (Fast): ${estimated} (${totalUsersCount} users)`);
+                    return;
+                }
+            }
+
+            // Fallback to existing method if fetch fails
+            const db = getDatabase();
+            const snapshot = await get(ref(db, "Matrimony/users"));
+            if (snapshot.exists()) {
+                const totalUsersCount = Object.keys(snapshot.val()).length;
+                setTotalUsers(totalUsersCount);
+                const estimated = Math.ceil(totalUsersCount / 100);
+                setEstimatedTotalPages(estimated);
+                sessionStorage.setItem("matrimony_estimated_pages", estimated.toString());
+                sessionStorage.setItem("matrimony_total_users", totalUsersCount.toString());
+                console.log(`Estimated total pages (Fallback): ${estimated} (${totalUsersCount} users)`);
+            }
+        } catch (error) {
+            console.error("Error estimating total pages:", error);
+        }
+    }, []);
+
+    const discoverPagesBatch = useCallback(async (targetPage) => {
+        if (isDiscoveringPages || targetPage < pageKeys.length) return pageKeys;
+
+        setIsDiscoveringPages(true);
+        const db = getDatabase();
+        let currentKey = pageKeys[pageKeys.length - 1];
+        let tempKeys = [...pageKeys];
+
+        try {
+            for (let i = pageKeys.length; i <= targetPage; i++) {
+                const queryRef = currentKey
+                    ? query(ref(db, "Matrimony/users"), orderByKey(), startAfter(currentKey), limitToFirst(100))
+                    : query(ref(db, "Matrimony/users"), orderByKey(), limitToFirst(100));
+
+                const snapshot = await get(queryRef);
+                if (snapshot.exists()) {
+                    const usersData = snapshot.val();
+                    const userEntries = Object.entries(usersData);
+                    if (userEntries.length > 0) {
+                        currentKey = userEntries[userEntries.length - 1][0];
+                        tempKeys.push(currentKey);
+                        setTotalPagesDiscovered(tempKeys.length);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            setPageKeys(tempKeys);
+            localStorage.setItem("matrimony_users_pageKeys", JSON.stringify(tempKeys));
+            sessionStorage.setItem("matrimony_users_pageKeys", JSON.stringify(tempKeys));
+            return tempKeys;
+        } catch (error) {
+            console.error("Error discovering pages:", error);
+            return pageKeys;
+        } finally {
+            setIsDiscoveringPages(false);
+        }
+    }, [isDiscoveringPages, pageKeys]);
+
+    const fetchUsers = useCallback(async (startKey) => {
+        // Don't fetch if we're restoring state and already have users for the SAME page
+        const savedPage = parseInt(sessionStorage.getItem("matrimony_users_page") || "0", 10);
+        if (isRestoringStateRef.current && users.length > 0 && currentPage === savedPage) {
+            console.log("Skipping fetch - restoring state with existing users for same page");
+            setLoading(false);
+            setLoadingPage(null);
+            setSearchingPage(false);
+            return;
+        }
+
+        try {
+            setLoading(true);
+            console.log("Fetching users with startKey:", startKey, "for page:", currentPage + 1);
+            const db = getDatabase();
+            const fetchLimit = 101;
+
+            let queryRef;
+            if (startKey) {
+                queryRef = query(
+                    ref(db, "Matrimony/users"),
+                    orderByKey(),
+                    startAfter(startKey),
+                    limitToFirst(fetchLimit)
+                );
+            } else {
+                queryRef = query(
+                    ref(db, "Matrimony/users"),
+                    orderByKey(),
+                    limitToFirst(fetchLimit)
+                );
+            }
+
+            const snapshot = await get(queryRef);
+            if (snapshot.exists()) {
+                const usersData = snapshot.val();
+                const userEntries = Object.entries(usersData);
+
+                setHasNextPage(userEntries.length > 100);
+
+                const displayUsers = userEntries.slice(0, 100);
+
+                const pageUsers = displayUsers.map(([key, value]) => {
+                    const personal = value.personal || {};
+                    const educational = value.educational || {};
+                    const contact = value.contact || {};
+                    const fullName = [personal.firstName, personal.middleName, personal.lastName]
+                        .filter(Boolean)
+                        .join(" ");
+                    const age = personal.dateOfBirth ? calculateAge(personal.dateOfBirth) : "Not specified";
+
+                    let photo = null;
+                    if (value.photos && Array.isArray(value.photos) && value.photos.length > 0) {
+                        const validPhotos = value.photos.filter(photoUrl =>
+                            photoUrl && typeof photoUrl === 'string' && isImageUrl(photoUrl)
+                        );
+                        if (validPhotos.length > 0) {
+                            photo = validPhotos[0];
+                        }
+                    }
+
+                    return {
+                        id: key,
+                        name: fullName || "Unnamed User",
+                        age,
+                        gender: personal.gender || "Not specified",
+                        location: educational.currentPlace || educational.district || educational.nativePlace || "Not specified",
+                        photo,
+                        phoneNumber: personal.phoneNumber || contact.callingNumber || key,
+                    };
+                });
+
+                setUsers(pageUsers);
+
+                // If we fetched a new page, update the pageKeys for the NEXT page
+                if (userEntries.length > 100) {
+                    const nextKey = userEntries[100][0];
+                    setPageKeys(prev => {
+                        const newKeys = [...prev];
+                        if (currentPage + 1 < newKeys.length) {
+                            newKeys[currentPage + 1] = nextKey;
+                        } else if (currentPage + 1 === newKeys.length) {
+                            newKeys.push(nextKey);
+                        }
+                        return newKeys;
+                    });
+                }
+            } else {
+                setUsers([]);
+                setHasNextPage(false);
+            }
+        } catch (error) {
+            console.error("Error fetching users:", error);
+            setUsers([]);
+            setHasNextPage(false);
+        } finally {
+            setLoading(false);
+            setLoadingPage(null);
+            setSearchingPage(false);
+            isRestoringStateRef.current = false;
+        }
+    }, [currentPage, users.length, calculateAge, isImageUrl]);
 
     // Enhanced state restoration
     useEffect(() => {
@@ -143,7 +350,7 @@ function HomePage() {
 
     useEffect(() => {
         estimateTotalPages();
-    }, []);
+    }, [estimateTotalPages]);
 
     // Modified useEffect to prevent unnecessary fetching
     // Modified useEffect to handle pagination properly
@@ -187,214 +394,7 @@ function HomePage() {
         }
     }, [users]);
 
-    const estimateTotalPages = async () => {
-        try {
-            // Optimization: Use shallow REST fetch to get only keys (much faster than fetching all data)
-            const dbUrl = "https://scroller-4d10f-default-rtdb.firebaseio.com";
-            const response = await fetch(`${dbUrl}/Matrimony/users.json?shallow=true`);
 
-            if (response.ok) {
-                const data = await response.json();
-                if (data) {
-                    const totalUsersCount = Object.keys(data).length;
-                    setTotalUsers(totalUsersCount);
-                    const estimated = Math.ceil(totalUsersCount / 100);
-                    setEstimatedTotalPages(estimated);
-                    sessionStorage.setItem("matrimony_estimated_pages", estimated.toString());
-                    sessionStorage.setItem("matrimony_total_users", totalUsersCount.toString());
-                    console.log(`Estimated total pages (Fast): ${estimated} (${totalUsersCount} users)`);
-                    return;
-                }
-            }
-
-            // Fallback to existing method if fetch fails
-            const db = getDatabase();
-            const snapshot = await get(ref(db, "Matrimony/users"));
-            if (snapshot.exists()) {
-                const totalUsersCount = Object.keys(snapshot.val()).length;
-                setTotalUsers(totalUsersCount);
-                const estimated = Math.ceil(totalUsersCount / 100);
-                setEstimatedTotalPages(estimated);
-                sessionStorage.setItem("matrimony_estimated_pages", estimated.toString());
-                sessionStorage.setItem("matrimony_total_users", totalUsersCount.toString());
-                console.log(`Estimated total pages (Fallback): ${estimated} (${totalUsersCount} users)`);
-            }
-        } catch (error) {
-            console.error("Error estimating total pages:", error);
-        }
-    };
-
-    // Enhanced fetchUsers with better state management
-    // Enhanced fetchUsers with better state management
-    // Actually, I'll just change the function definition to use useCallback.
-    const fetchUsers = useCallback(async (startKey) => {
-        // Don't fetch if we're restoring state and already have users for the SAME page
-        const savedPage = parseInt(sessionStorage.getItem("matrimony_users_page") || "0", 10);
-        if (isRestoringStateRef.current && users.length > 0 && currentPage === savedPage) {
-            console.log("Skipping fetch - restoring state with existing users for same page");
-            setLoading(false);
-            setLoadingPage(null);
-            setSearchingPage(false);
-            return;
-        }
-
-        try {
-            setLoading(true);
-            console.log("Fetching users with startKey:", startKey, "for page:", currentPage + 1);
-            const db = getDatabase();
-            const fetchLimit = 101;
-
-            let queryRef;
-            if (startKey) {
-                queryRef = query(
-                    ref(db, "Matrimony/users"),
-                    orderByKey(),
-                    startAfter(startKey),
-                    limitToFirst(fetchLimit)
-                );
-            } else {
-                queryRef = query(
-                    ref(db, "Matrimony/users"),
-                    orderByKey(),
-                    limitToFirst(fetchLimit)
-                );
-            }
-
-            const snapshot = await get(queryRef);
-            if (snapshot.exists()) {
-                const usersData = snapshot.val();
-                const userEntries = Object.entries(usersData);
-
-                setHasNextPage(userEntries.length > 100);
-
-                const displayUsers = userEntries.slice(0, 100);
-                // Removed redundant lastFetchedKey setting as it was unused
-
-                const pageUsers = displayUsers.map(([key, value]) => {
-                    const personal = value.personal || {};
-                    const educational = value.educational || {};
-                    const contact = value.contact || {};
-                    const fullName = [personal.firstName, personal.middleName, personal.lastName]
-                        .filter(Boolean)
-                        .join(" ");
-                    const age = personal.dateOfBirth ? calculateAge(personal.dateOfBirth) : "Not specified";
-
-                    let photo = null;
-                    if (value.photos && Array.isArray(value.photos) && value.photos.length > 0) {
-                        const validPhotos = value.photos.filter(photoUrl =>
-                            photoUrl && typeof photoUrl === 'string' && isImageUrl(photoUrl)
-                        );
-                        if (validPhotos.length > 0) {
-                            photo = validPhotos[0];
-                        }
-                    }
-
-                    return {
-                        id: key,
-                        name: fullName || "Unnamed User",
-                        age,
-                        gender: personal.gender || "Not specified",
-                        location: educational.currentPlace || educational.district || educational.nativePlace || "Not specified",
-                        photo,
-                        phoneNumber: personal.phoneNumber || contact.callingNumber || key,
-                    };
-                });
-
-                if (currentPage === 0) {
-                    setUsers(pageUsers);
-                } else {
-                    setUsers(pageUsers);
-                }
-
-                // If we fetched a new page, update the pageKeys for the NEXT page
-                if (userEntries.length > 100) {
-                    const nextKey = userEntries[100][0];
-                    setPageKeys(prev => {
-                        const newKeys = [...prev];
-                        if (currentPage + 1 < newKeys.length) {
-                            newKeys[currentPage + 1] = nextKey;
-                        } else if (currentPage + 1 === newKeys.length) {
-                            newKeys.push(nextKey);
-                        }
-                        return newKeys;
-                    });
-                }
-            } else {
-                setUsers([]);
-                setHasNextPage(false);
-            }
-        } catch (error) {
-            console.error("Error fetching users:", error);
-            setUsers([]);
-            setHasNextPage(false);
-        } finally {
-            setLoading(false);
-            setLoadingPage(null);
-            setSearchingPage(false);
-            isRestoringStateRef.current = false;
-        }
-    }, [currentPage, pageKeys, users.length]);
-
-    const discoverPagesBatch = async (targetPage) => {
-        if (isDiscoveringPages || targetPage < pageKeys.length) return pageKeys;
-
-        setIsDiscoveringPages(true);
-        const db = getDatabase();
-        let currentKey = pageKeys[pageKeys.length - 1];
-        let tempKeys = [...pageKeys];
-
-        try {
-            for (let i = pageKeys.length; i <= targetPage; i++) {
-                const queryRef = currentKey
-                    ? query(ref(db, "Matrimony/users"), orderByKey(), startAfter(currentKey), limitToFirst(100))
-                    : query(ref(db, "Matrimony/users"), orderByKey(), limitToFirst(100));
-
-                const snapshot = await get(queryRef);
-                if (snapshot.exists()) {
-                    const usersData = snapshot.val();
-                    const userEntries = Object.entries(usersData);
-                    if (userEntries.length > 0) {
-                        currentKey = userEntries[userEntries.length - 1][0];
-                        tempKeys.push(currentKey);
-                        setTotalPagesDiscovered(tempKeys.length);
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            setPageKeys(tempKeys);
-            localStorage.setItem("matrimony_users_pageKeys", JSON.stringify(tempKeys));
-            sessionStorage.setItem("matrimony_users_pageKeys", JSON.stringify(tempKeys));
-            return tempKeys;
-        } catch (error) {
-            console.error("Error discovering pages:", error);
-            return pageKeys;
-        } finally {
-            setIsDiscoveringPages(false);
-        }
-    };
-
-    const isImageUrl = (url) => {
-        if (!url || typeof url !== 'string') return false;
-        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
-        const lowerUrl = url.toLowerCase();
-        return (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) &&
-            imageExtensions.some(ext => lowerUrl.includes(ext));
-    };
-
-    const calculateAge = (dob) => {
-        const today = new Date();
-        const birthDate = new Date(dob);
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-        }
-        return age;
-    };
 
     // Enhanced handleViewDetails with comprehensive state preservation
     const handleViewDetails = (id) => {
@@ -846,11 +846,7 @@ function HomePage() {
         border: "1px solid rgba(124, 58, 237, 0.2)",
     };
 
-    const genderIcon = (gender) => {
-        if (gender.toLowerCase() === "male") return "👨";
-        if (gender.toLowerCase() === "female") return "👩";
-        return "🧑";
-    };
+
 
 
     return (

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { getDatabase, ref, set, get, update } from "firebase/database";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { getDatabase, ref, get, update } from "firebase/database";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -33,14 +33,8 @@ function Edit() {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
-    useEffect(() => {
-        if (userId) {
-            fetchUserData();
-        }
-    }, [userId]);
-
     // Enhanced function to validate Firebase Storage URLs
-    const isValidFirebaseStorageUrl = (url) => {
+    const isValidFirebaseStorageUrl = useCallback((url) => {
         if (!url || typeof url !== 'string') return false;
 
         // Check if it's a valid Firebase Storage URL - Using RegExp constructor to avoid escape character issues with /
@@ -48,13 +42,13 @@ function Edit() {
         const firebaseStoragePattern2 = new RegExp('^https://storage\\.googleapis\\.com/[^/]+/.+');
 
         return firebaseStoragePattern.test(url) || firebaseStoragePattern2.test(url);
-    };
+    }, []);
 
-    const fetchUserData = async () => {
+    const fetchUserData = useCallback(async () => {
         try {
             setLoading(true);
             const db = getDatabase();
-            const userRef = ref(db, `Matrimony/users/${userId}`);
+            const userRef = ref(db, `Matrimony / users / ${userId} `);
             const snapshot = await get(userRef);
 
             if (snapshot.exists()) {
@@ -90,14 +84,20 @@ function Edit() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [userId, navigate, isValidFirebaseStorageUrl]);
+
+    useEffect(() => {
+        if (userId) {
+            fetchUserData();
+        }
+    }, [userId, fetchUserData]);
 
     // Auto-save function that updates database immediately
     const autoSaveToDatabase = async (type, newImageData) => {
         try {
             setAutoSaving(true);
             const db = getDatabase();
-            const userRef = ref(db, `Matrimony/users/${userId}`);
+            const userRef = ref(db, `Matrimony / users / ${userId} `);
 
             const updates = {};
 
@@ -120,7 +120,7 @@ function Edit() {
 
         } catch (error) {
             console.error("Error auto-saving to database:", error);
-            setErrors([`Failed to save ${type} to database. Please try again.`]);
+            setErrors([`Failed to save ${type} to database.Please try again.`]);
             setTimeout(() => setErrors([]), 5000);
         } finally {
             setAutoSaving(false);
@@ -153,7 +153,7 @@ function Edit() {
 
                 // Validate file size (max 5MB)
                 if (file.size > 5 * 1024 * 1024) {
-                    uploadErrors.push(`${file.name} is too large (max 5MB)`);
+                    uploadErrors.push(`${file.name} is too large(max 5MB)`);
                     continue;
                 }
 
@@ -162,11 +162,11 @@ function Edit() {
                     const timestamp = Date.now();
                     const randomStr = Math.random().toString(36).substring(2, 8);
                     const fileExtension = file.name.split('.').pop();
-                    const filename = `${timestamp}_${randomStr}.${fileExtension}`;
+                    const filename = `${timestamp}_${randomStr}.${fileExtension} `;
 
                     // Create storage reference
                     const folderPath = type === 'biodata' ? 'bio' : 'photos';
-                    const fileRef = storageRef(storage, `matrimony/${folderPath}/${filename}`);
+                    const fileRef = storageRef(storage, `matrimony / ${folderPath}/${filename}`);
 
                     // Upload file
                     setUploadStatus(`⬆️ Uploading ${file.name} to Firebase Storage...`);
