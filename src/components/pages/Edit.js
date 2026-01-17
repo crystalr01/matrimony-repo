@@ -44,8 +44,8 @@ function Edit() {
         if (!url || typeof url !== 'string') return false;
 
         // Check if it's a valid Firebase Storage URL
-        const firebaseStoragePattern = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^\/]+\/o\/.+/;
-        const firebaseStoragePattern2 = /^https:\/\/storage\.googleapis\.com\/[^\/]+\/.+/;
+        const firebaseStoragePattern = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/.+/;
+        const firebaseStoragePattern2 = /^https:\/\/storage\.googleapis\.com\/[^/]+\/.+/;
 
         return firebaseStoragePattern.test(url) || firebaseStoragePattern2.test(url);
     };
@@ -690,7 +690,7 @@ function Edit() {
                         <div style={imagePreviewContainerStyle}>
                             {userImages.map((url, index) => (
                                 <div key={index} style={imagePreviewStyle}>
-                                    <img src={url} alt={`Photo ${index + 1}`} style={imageStyle} />
+                                    <img src={url} alt={`${index + 1}`} style={imageStyle} />
                                     <button
                                         style={removeButtonStyle}
                                         onClick={() => removeUserImage(index)}
